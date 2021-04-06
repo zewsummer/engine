@@ -92,9 +92,9 @@ Paint::Paint(Dart_Handle paint_objects, Dart_Handle paint_data) {
     Dart_Handle shader = values[kShaderIndex];
     if (!Dart_IsNull(shader)) {
       Shader* decoded = tonic::DartConverter<Shader*>::FromDart(shader);
-      uint32_t filter_quality = uint_data[kFilterQualityIndex];
-      paint_.setShader(
-          decoded->shader(static_cast<SkFilterQuality>(filter_quality)));
+      auto sampling =
+          ImageFilter::SamplingFromIndex(uint_data[kFilterQualityIndex]);
+      paint_.setShader(decoded->shader(sampling));
     }
 
     Dart_Handle color_filter = values[kColorFilterIndex];

@@ -44,13 +44,17 @@ class EngineFlutterWindow extends ui.SingletonFlutterWindow {
   /// button, etc.
   @visibleForTesting
   BrowserHistory get browserHistory {
+    return _browserHistory ??=
+        MultiEntriesBrowserHistory(urlStrategy: _urlStrategyForInitialization);
+  }
+
+  UrlStrategy? get _urlStrategyForInitialization {
     final UrlStrategy? urlStrategy = _isUrlStrategySet
         ? _customUrlStrategy
         : _createDefaultUrlStrategy();
     // Prevent any further customization of URL strategy.
     _isUrlStrategySet = true;
-    return _browserHistory ??=
-        MultiEntriesBrowserHistory(urlStrategy: urlStrategy);
+    return urlStrategy;
   }
 
   BrowserHistory? _browserHistory;
@@ -59,8 +63,14 @@ class EngineFlutterWindow extends ui.SingletonFlutterWindow {
     if (_browserHistory is SingleEntryBrowserHistory) {
       return;
     }
-    final UrlStrategy? strategy = _browserHistory?.urlStrategy;
-    await _browserHistory?.tearDown();
+
+    final UrlStrategy? strategy;
+    if (_browserHistory == null) {
+      strategy = _urlStrategyForInitialization;
+    } else {
+      strategy = _browserHistory?.urlStrategy;
+      await _browserHistory?.tearDown();
+    }
     _browserHistory = SingleEntryBrowserHistory(urlStrategy: strategy);
   }
 
@@ -68,8 +78,14 @@ class EngineFlutterWindow extends ui.SingletonFlutterWindow {
     if (_browserHistory is MultiEntriesBrowserHistory) {
       return;
     }
-    final UrlStrategy? strategy = _browserHistory?.urlStrategy;
-    await _browserHistory?.tearDown();
+
+    final UrlStrategy? strategy;
+    if (_browserHistory == null) {
+      strategy = _urlStrategyForInitialization;
+    } else {
+      strategy = _browserHistory?.urlStrategy;
+      await _browserHistory?.tearDown();
+    }
     _browserHistory = MultiEntriesBrowserHistory(urlStrategy: strategy);
   }
 
@@ -256,12 +272,11 @@ typedef _JsSetUrlStrategy = void Function(JsUrlStrategy?);
 //
 // TODO: Add integration test https://github.com/flutter/flutter/issues/66852
 @JS('_flutter_web_set_location_strategy')
-// ignore: unused_element
 external set _jsSetUrlStrategy(_JsSetUrlStrategy? newJsSetUrlStrategy);
 
 UrlStrategy? _createDefaultUrlStrategy() {
   return ui.debugEmulateFlutterTesterEnvironment
-      ? null
+      ? TestUrlStrategy.fromEntry(TestHistoryEntry('default', null, '/'))
       : const HashUrlStrategy();
 }
 

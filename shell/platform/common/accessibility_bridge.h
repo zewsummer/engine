@@ -25,7 +25,7 @@ namespace flutter {
 ///
 /// The bridge creates an AXTree to hold the semantics data that comes from
 /// Flutter semantics updates. The tree holds AXNode[s] which contain the
-/// semantics information for semantics node. The AXTree ressemble the Flutter
+/// semantics information for semantics node. The AXTree resemble the Flutter
 /// semantics tree in the Flutter framework. The bridge also uses
 /// FlutterPlatformNodeDelegate to wrap each AXNode in order to provide
 /// an accessibility tree in the native format.
@@ -86,9 +86,10 @@ class AccessibilityBridge
     /// @param[in]  action              The generated flutter semantics action.
     /// @param[in]  data                Additional data associated with the
     ///                                 action.
-    virtual void DispatchAccessibilityAction(AccessibilityNodeId target,
-                                             FlutterSemanticsAction action,
-                                             std::vector<uint8_t> data) = 0;
+    virtual void DispatchAccessibilityAction(
+        AccessibilityNodeId target,
+        FlutterSemanticsAction action,
+        const std::vector<uint8_t>& data) = 0;
 
     //---------------------------------------------------------------------------
     /// @brief      Creates a platform specific FlutterPlatformNodeDelegate.
@@ -153,6 +154,14 @@ class AccessibilityBridge
   ///             data contains information such as the id of the node that
   ///             has the keyboard focus or the text selection range.
   const ui::AXTreeData& GetAXTreeData() const;
+
+  //------------------------------------------------------------------------------
+  /// @brief      Gets all pending accessibility events generated during
+  ///             semantics updates. This is useful when deciding how to handle
+  ///             events in AccessibilityBridgeDelegate::OnAccessibilityEvent in
+  ///             case one may decide to handle an event differently based on
+  ///             all pending events.
+  const std::vector<ui::AXEventGenerator::TargetedEvent> GetPendingEvents();
 
  private:
   // See FlutterSemanticsNode in embedder.h

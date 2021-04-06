@@ -31,13 +31,17 @@ class Scene extends NativeFieldWrapperClass2 {
     if (width <= 0 || height <= 0) {
       throw Exception('Invalid image dimensions.');
     }
-    return _futurize((_Callback<Image> callback) => _toImage(width, height, (_Image image) {
-        callback(Image._(image));
+    return _futurize((_Callback<Image?> callback) => _toImage(width, height, (_Image? image) {
+        if (image == null) {
+          callback(null);
+        } else {
+          callback(Image._(image));
+        }
       }),
     );
   }
 
-  String? _toImage(int width, int height, _Callback<_Image> callback) native 'Scene_toImage';
+  String? _toImage(int width, int height, _Callback<_Image?> callback) native 'Scene_toImage';
 
   /// Releases the resources used by this scene.
   ///
@@ -335,7 +339,7 @@ class SceneBuilder extends NativeFieldWrapperClass2 {
     Clip clipBehavior = Clip.antiAlias,
     ClipRectEngineLayer? oldLayer,
   }) {
-    assert(clipBehavior != null); // ignore: unnecessary_null_comparison
+    assert(clipBehavior != null);
     assert(clipBehavior != Clip.none);
     assert(_debugCheckCanBeUsedAsOldLayer(oldLayer, 'pushClipRect'));
     final EngineLayer engineLayer = EngineLayer._();
@@ -364,7 +368,7 @@ class SceneBuilder extends NativeFieldWrapperClass2 {
     Clip clipBehavior = Clip.antiAlias,
     ClipRRectEngineLayer? oldLayer,
   }) {
-    assert(clipBehavior != null); // ignore: unnecessary_null_comparison
+    assert(clipBehavior != null);
     assert(clipBehavior != Clip.none);
     assert(_debugCheckCanBeUsedAsOldLayer(oldLayer, 'pushClipRRect'));
     final EngineLayer engineLayer = EngineLayer._();
@@ -392,7 +396,7 @@ class SceneBuilder extends NativeFieldWrapperClass2 {
     Clip clipBehavior = Clip.antiAlias,
     ClipPathEngineLayer? oldLayer,
   }) {
-    assert(clipBehavior != null); // ignore: unnecessary_null_comparison
+    assert(clipBehavior != null);
     assert(clipBehavior != Clip.none);
     assert(_debugCheckCanBeUsedAsOldLayer(oldLayer, 'pushClipPath'));
     final EngineLayer engineLayer = EngineLayer._();
@@ -447,10 +451,10 @@ class SceneBuilder extends NativeFieldWrapperClass2 {
     ColorFilter filter, {
     ColorFilterEngineLayer? oldLayer,
   }) {
-    assert(filter != null); // ignore: unnecessary_null_comparison
+    assert(filter != null);
     assert(_debugCheckCanBeUsedAsOldLayer(oldLayer, 'pushColorFilter'));
     final _ColorFilter nativeFilter = filter._toNativeColorFilter()!;
-    assert(nativeFilter != null); // ignore: unnecessary_null_comparison
+    assert(nativeFilter != null);
     final EngineLayer engineLayer = EngineLayer._();
     _pushColorFilter(engineLayer, nativeFilter, oldLayer?._nativeLayer);
     final ColorFilterEngineLayer layer = ColorFilterEngineLayer._(engineLayer);
@@ -475,10 +479,10 @@ class SceneBuilder extends NativeFieldWrapperClass2 {
     ImageFilter filter, {
     ImageFilterEngineLayer? oldLayer,
   }) {
-    assert(filter != null); // ignore: unnecessary_null_comparison
+    assert(filter != null);
     assert(_debugCheckCanBeUsedAsOldLayer(oldLayer, 'pushImageFilter'));
     final _ImageFilter nativeFilter = filter._toNativeImageFilter();
-    assert(nativeFilter != null); // ignore: unnecessary_null_comparison
+    assert(nativeFilter != null);
     final EngineLayer engineLayer = EngineLayer._();
     _pushImageFilter(engineLayer, nativeFilter, oldLayer?._nativeLayer);
     final ImageFilterEngineLayer layer = ImageFilterEngineLayer._(engineLayer);
@@ -529,6 +533,7 @@ class SceneBuilder extends NativeFieldWrapperClass2 {
     Rect maskRect,
     BlendMode blendMode, {
     ShaderMaskEngineLayer? oldLayer,
+    FilterQuality filterQuality = FilterQuality.low,
   }) {
     assert(_debugCheckCanBeUsedAsOldLayer(oldLayer, 'pushShaderMask'));
     final EngineLayer engineLayer = EngineLayer._();
@@ -540,6 +545,7 @@ class SceneBuilder extends NativeFieldWrapperClass2 {
       maskRect.top,
       maskRect.bottom,
       blendMode.index,
+      filterQuality.index,
       oldLayer?._nativeLayer,
     );
     final ShaderMaskEngineLayer layer = ShaderMaskEngineLayer._(engineLayer);
@@ -555,6 +561,7 @@ class SceneBuilder extends NativeFieldWrapperClass2 {
       double maskRectTop,
       double maskRectBottom,
       int blendMode,
+      int filterQualityIndex,
       EngineLayer? oldLayer) native 'SceneBuilder_pushShaderMask';
 
   /// Pushes a physical layer operation for an arbitrary shape onto the
@@ -573,7 +580,6 @@ class SceneBuilder extends NativeFieldWrapperClass2 {
   /// {@macro dart.ui.sceneBuilder.oldLayerVsRetained}
   ///
   /// See [pop] for details about the operation stack, and [Clip] for different clip modes.
-  // ignore: deprecated_member_use
   PhysicalShapeEngineLayer? pushPhysicalShape({
     required Path path,
     required double elevation,
@@ -723,7 +729,7 @@ class SceneBuilder extends NativeFieldWrapperClass2 {
     bool freeze = false,
     FilterQuality filterQuality = FilterQuality.low,
   }) {
-    assert(offset != null, 'Offset argument was null'); // ignore: unnecessary_null_comparison
+    assert(offset != null, 'Offset argument was null');
     _addTexture(offset.dx, offset.dy, width, height, textureId, freeze, filterQuality.index);
   }
 
@@ -752,7 +758,7 @@ class SceneBuilder extends NativeFieldWrapperClass2 {
     double width = 0.0,
     double height = 0.0,
   }) {
-    assert(offset != null, 'Offset argument was null'); // ignore: unnecessary_null_comparison
+    assert(offset != null, 'Offset argument was null');
     _addPlatformView(offset.dx, offset.dy, width, height, viewId);
   }
 

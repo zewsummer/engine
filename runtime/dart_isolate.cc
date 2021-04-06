@@ -34,6 +34,8 @@ namespace flutter {
 
 namespace {
 
+constexpr std::string_view kFileUriPrefix = "file://";
+
 class DartErrorString {
  public:
   DartErrorString() : str_(nullptr) {}
@@ -329,6 +331,7 @@ DartIsolate::DartIsolate(
                   advisory_script_entrypoint,
                   settings.log_tag,
                   settings.unhandled_exception_callback,
+                  settings.log_message_callback,
                   DartVMRef::GetIsolateNameServer(),
                   is_root_isolate,
                   std::move(volatile_path_tracker),
@@ -443,8 +446,12 @@ void DartIsolate::SetMessageHandlingTaskRunner(
 
   message_handling_task_runner_ = runner;
 
-  message_handler().Initialize(
-      [runner](std::function<void()> task) { runner->PostTask(task); });
+  message_handler().Initialize([runner](std::function<void()> task) {
+    runner->PostTask([task = std::move(task)]() {
+      TRACE_EVENT0("flutter", "DartIsolate::HandleMessage");
+      task();
+    });
+  });
 }
 
 // Updating thread names here does not change the underlying OS thread names.
@@ -929,6 +936,14 @@ Dart_Isolate DartIsolate::DartIsolateGroupCreateCallback(
   DartIsolateGroupData& parent_group_data =
       (*parent_isolate_data)->GetIsolateGroupData();
 
+  if (strncmp(advisory_script_uri, kFileUriPrefix.data(),
+              kFileUriPrefix.size())) {
+    std::string error_msg =
+        std::string("Unsupported isolate URI: ") + advisory_script_uri;
+    *error = fml::strdup(error_msg.c_str());
+    return nullptr;
+  }
+
   auto isolate_group_data =
       std::make_unique<std::shared_ptr<DartIsolateGroupData>>(
           std::shared_ptr<DartIsolateGroupData>(new DartIsolateGroupData(
@@ -1076,9 +1091,10 @@ bool DartIsolate::InitializeIsolate(
     return false;
   }
 
-  // Root isolates will be setup by the engine and the service isolate (which is
-  // also a root isolate) by the utility routines in the VM. However, secondary
-  // isolates will be run by the VM if they are marked as runnable.
+  // Root isolates will be set up by the engine and the service isolate
+  // (which is also a root isolate) by the utility routines in the VM.
+  // However, secondary isolates will be run by the VM if they are
+  // marked as runnable.
   if (!embedder_isolate->IsRootIsolate()) {
     auto child_isolate_preparer =
         embedder_isolate->GetIsolateGroupData().GetChildIsolatePreparer();

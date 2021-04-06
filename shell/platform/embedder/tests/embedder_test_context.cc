@@ -140,6 +140,11 @@ void EmbedderTestContext::PlatformMessageCallback(
   }
 }
 
+void EmbedderTestContext::SetLogMessageCallback(
+    const LogMessageCallback& callback) {
+  log_message_callback_ = callback;
+}
+
 FlutterUpdateSemanticsNodeCallback
 EmbedderTestContext::GetUpdateSemanticsNodeCallbackHook() {
   return [](const FlutterSemanticsNode* semantics_node, void* user_data) {
@@ -160,6 +165,15 @@ EmbedderTestContext::GetUpdateSemanticsCustomActionCallbackHook() {
   };
 }
 
+FlutterLogMessageCallback EmbedderTestContext::GetLogMessageCallbackHook() {
+  return [](const char* tag, const char* message, void* user_data) {
+    auto context = reinterpret_cast<EmbedderTestContext*>(user_data);
+    if (auto callback = context->log_message_callback_) {
+      callback(tag, message);
+    }
+  };
+}
+
 FlutterComputePlatformResolvedLocaleCallback
 EmbedderTestContext::GetComputePlatformResolvedLocaleCallbackHook() {
   return [](const FlutterLocale** supported_locales,
@@ -174,8 +188,8 @@ FlutterTransformation EmbedderTestContext::GetRootSurfaceTransformation() {
 
 EmbedderTestCompositor& EmbedderTestContext::GetCompositor() {
   FML_CHECK(compositor_)
-      << "Accessed the compositor on a context where one was not setup. Use "
-         "the config builder to setup a context with a custom compositor.";
+      << "Accessed the compositor on a context where one was not set up. Use "
+         "the config builder to set up a context with a custom compositor.";
   return *compositor_;
 }
 

@@ -15,7 +15,7 @@
 #include "flutter/shell/platform/windows/window_binding_handler_delegate.h"
 
 #ifdef WINUWP
-#include <winrt/Windows.UI.Composition.h>
+#include <third_party/cppwinrt/generated/winrt/Windows.UI.Composition.h>
 #endif
 
 namespace flutter {
@@ -63,8 +63,16 @@ class WindowBindingHandler {
   // content. See mouse_cursor.dart for the values and meanings of cursor_name.
   virtual void UpdateFlutterCursor(const std::string& cursor_name) = 0;
 
-  // Sets the cursor rect in root view coordinates.
-  virtual void UpdateCursorRect(const Rect& rect) = 0;
+  // Invoked when the cursor/composing rect has been updated in the framework.
+  virtual void OnCursorRectUpdated(const Rect& rect) = 0;
+
+  // Invoked when the Embedder provides us with new bitmap data for the contents
+  // of this Flutter view.
+  //
+  // Returns whether the surface was successfully updated or not.
+  virtual bool OnBitmapSurfaceUpdated(const void* allocation,
+                                      size_t row_bytes,
+                                      size_t height) = 0;
 };
 
 }  // namespace flutter

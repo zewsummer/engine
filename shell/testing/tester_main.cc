@@ -6,6 +6,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <iostream>
 
 #include "flutter/assets/asset_manager.h"
 #include "flutter/assets/directory_asset_bundle.h"
@@ -152,7 +153,7 @@ int RunTester(const flutter::Settings& settings,
   );
 
   if (!shell || !shell->IsSetup()) {
-    FML_LOG(ERROR) << "Could not setup the shell.";
+    FML_LOG(ERROR) << "Could not set up the shell.";
     return EXIT_FAILURE;
   }
 
@@ -291,6 +292,14 @@ int main(int argc, char* argv[]) {
 
   // The tools that read logs get confused if there is a log tag specified.
   settings.log_tag = "";
+
+  settings.log_message_callback = [](const std::string& tag,
+                                     const std::string& message) {
+    if (tag.size() > 0) {
+      std::cout << tag << ": ";
+    }
+    std::cout << message << std::endl;
+  };
 
   settings.task_observer_add = [](intptr_t key, fml::closure callback) {
     fml::MessageLoop::GetCurrent().AddTaskObserver(key, std::move(callback));

@@ -18,11 +18,9 @@
 #include "flutter/shell/platform/windows/angle_surface_manager.h"
 #include "flutter/shell/platform/windows/cursor_handler.h"
 #include "flutter/shell/platform/windows/flutter_windows_engine.h"
-#include "flutter/shell/platform/windows/key_event_handler.h"
-#include "flutter/shell/platform/windows/keyboard_hook_handler.h"
+#include "flutter/shell/platform/windows/keyboard_handler_base.h"
 #include "flutter/shell/platform/windows/platform_handler.h"
 #include "flutter/shell/platform/windows/public/flutter_windows.h"
-#include "flutter/shell/platform/windows/text_input_plugin.h"
 #include "flutter/shell/platform/windows/text_input_plugin_delegate.h"
 #include "flutter/shell/platform/windows/window_binding_handler.h"
 #include "flutter/shell/platform/windows/window_binding_handler_delegate.h"
@@ -74,6 +72,11 @@ class FlutterWindowsView : public WindowBindingHandlerDelegate,
   bool MakeResourceCurrent();
   bool SwapBuffers();
 
+  // Callback for presenting a software bitmap.
+  bool PresentSoftwareBitmap(const void* allocation,
+                             size_t row_bytes,
+                             size_t height);
+
   // Send initial bounds to embedder.  Must occur after engine has initialized.
   void SendInitialBounds();
 
@@ -107,10 +110,14 @@ class FlutterWindowsView : public WindowBindingHandlerDelegate,
              int scancode,
              int action,
              char32_t character,
-             bool extended) override;
+             bool extended,
+             bool was_down) override;
 
   // |WindowBindingHandlerDelegate|
   void OnComposeBegin() override;
+
+  // |WindowBindingHandlerDelegate|
+  void OnComposeCommit() override;
 
   // |WindowBindingHandlerDelegate|
   void OnComposeEnd() override;
@@ -130,12 +137,11 @@ class FlutterWindowsView : public WindowBindingHandlerDelegate,
 
  protected:
   // Called to create the keyboard hook handlers.
-  virtual void RegisterKeyboardHookHandlers(
-      flutter::BinaryMessenger* messenger);
+  virtual void RegisterKeyboardHandlers(flutter::BinaryMessenger* messenger);
 
-  // Used by RegisterKeyboardHookHandlers to add a new keyboard hook handler.
-  void AddKeyboardHookHandler(
-      std::unique_ptr<flutter::KeyboardHookHandler> handler);
+  // Used by RegisterKeyboardHandlers to add a new keyboard hook handler.
+  void AddKeyboardHandler(
+      std::unique_ptr<flutter::KeyboardHandlerBase> handler);
 
  private:
   // Struct holding the mouse state. The engine doesn't keep track of which
@@ -195,13 +201,21 @@ class FlutterWindowsView : public WindowBindingHandlerDelegate,
                int scancode,
                int action,
                char32_t character,
-               bool extended);
+               bool extended,
+               bool was_down);
 
   // Reports an IME compose begin event.
   //
   // Triggered when the user begins editing composing text using a multi-step
   // input method such as in CJK text input.
   void SendComposeBegin();
+
+  // Reports an IME compose commit event.
+  //
+  // Triggered when the user commits the current composing text while using a
+  // multi-step input method such as in CJK text input. Composing continues with
+  // the next keypress.
+  void SendComposeCommit();
 
   // Reports an IME compose end event.
   //
@@ -255,10 +269,6 @@ class FlutterWindowsView : public WindowBindingHandlerDelegate,
   // os window.
   std::unique_ptr<WindowsRenderTarget> render_target_;
 
-  // An object used for intializing Angle and creating / destroying render
-  // surfaces. Surface creation functionality requires a valid render_target.
-  std::unique_ptr<AngleSurfaceManager> surface_manager_;
-
   // The engine associated with this view.
   std::unique_ptr<FlutterWindowsEngine> engine_;
 
@@ -269,8 +279,7 @@ class FlutterWindowsView : public WindowBindingHandlerDelegate,
   std::unique_ptr<flutter::PluginRegistrar> internal_plugin_registrar_;
 
   // Handlers for keyboard events from Windows.
-  std::vector<std::unique_ptr<flutter::KeyboardHookHandler>>
-      keyboard_hook_handlers_;
+  std::vector<std::unique_ptr<flutter::KeyboardHandlerBase>> keyboard_handlers_;
 
   // Handler for the flutter/platform channel.
   std::unique_ptr<flutter::PlatformHandler> platform_handler_;

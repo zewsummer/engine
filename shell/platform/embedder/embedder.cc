@@ -469,7 +469,9 @@ static sk_sp<SkSurface> MakeSkSurfaceFromBackingStore(
 
   if (!surface) {
     FML_LOG(ERROR) << "Could not wrap embedder supplied render texture.";
-    texture->destruction_callback(texture->user_data);
+    if (texture->destruction_callback) {
+      texture->destruction_callback(texture->user_data);
+    }
     return nullptr;
   }
 
@@ -512,7 +514,9 @@ static sk_sp<SkSurface> MakeSkSurfaceFromBackingStore(
 
   if (!surface) {
     FML_LOG(ERROR) << "Could not wrap embedder supplied frame-buffer.";
-    framebuffer->destruction_callback(framebuffer->user_data);
+    if (framebuffer->destruction_callback) {
+      framebuffer->destruction_callback(framebuffer->user_data);
+    }
     return nullptr;
   }
   return surface;
@@ -537,7 +541,9 @@ static sk_sp<SkSurface> MakeSkSurfaceFromBackingStore(
   captures->user_data = software->user_data;
   auto release_proc = [](void* pixels, void* context) {
     auto captures = reinterpret_cast<Captures*>(context);
-    captures->destruction_callback(captures->user_data);
+    if (captures->destruction_callback) {
+      captures->destruction_callback(captures->user_data);
+    }
   };
 
   auto surface = SkSurface::MakeRasterDirectReleaseProc(
@@ -551,7 +557,9 @@ static sk_sp<SkSurface> MakeSkSurfaceFromBackingStore(
   if (!surface) {
     FML_LOG(ERROR)
         << "Could not wrap embedder supplied software render buffer.";
-    software->destruction_callback(software->user_data);
+    if (software->destruction_callback) {
+      software->destruction_callback(software->user_data);
+    }
     return nullptr;
   }
   return surface;
@@ -945,6 +953,18 @@ FlutterEngineResult FlutterEngineInitialize(size_t version,
     settings.root_isolate_create_callback =
         [callback, user_data](const auto& isolate) { callback(user_data); };
   }
+  if (SAFE_ACCESS(args, log_message_callback, nullptr) != nullptr) {
+    FlutterLogMessageCallback callback =
+        SAFE_ACCESS(args, log_message_callback, nullptr);
+    settings.log_message_callback = [callback, user_data](
+                                        const std::string& tag,
+                                        const std::string& message) {
+      callback(tag.c_str(), message.c_str(), user_data);
+    };
+  }
+  if (SAFE_ACCESS(args, log_tag, nullptr) != nullptr) {
+    settings.log_tag = SAFE_ACCESS(args, log_tag, nullptr);
+  }
 
   flutter::PlatformViewEmbedder::UpdateSemanticsNodesCallback
       update_semantics_nodes_callback = nullptr;
@@ -1193,7 +1213,7 @@ FlutterEngineResult FlutterEngineInitialize(size_t version,
 
   if (!thread_host || !thread_host->IsValid()) {
     return LOG_EMBEDDER_ERROR(kInvalidArguments,
-                              "Could not setup or infer thread configuration "
+                              "Could not set up or infer thread configuration "
                               "to run the Flutter engine on.");
   }
 

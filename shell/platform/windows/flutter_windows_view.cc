@@ -6,6 +6,10 @@
 
 #include <chrono>
 
+#include "flutter/shell/platform/windows/keyboard_key_channel_handler.h"
+#include "flutter/shell/platform/windows/keyboard_key_embedder_handler.h"
+#include "flutter/shell/platform/windows/text_input_plugin.h"
+
 namespace flutter {
 
 /// Returns true if the surface will be updated as part of the resize process.
@@ -28,8 +32,6 @@ static bool SurfaceWillUpdate(size_t cur_width,
 
 FlutterWindowsView::FlutterWindowsView(
     std::unique_ptr<WindowBindingHandler> window_binding) {
-  surface_manager_ = std::make_unique<AngleSurfaceManager>();
-
   // Take the binding handler, and give it a pointer back to self.
   binding_handler_ = std::move(window_binding);
   binding_handler_->SetView(this);
@@ -53,7 +55,7 @@ void FlutterWindowsView::SetEngine(
 
   // Set up the system channel handlers.
   auto internal_plugin_messenger = internal_plugin_registrar_->messenger();
-  RegisterKeyboardHookHandlers(internal_plugin_messenger);
+  RegisterKeyboardHandlers(internal_plugin_messenger);
   platform_handler_ = PlatformHandler::Create(internal_plugin_messenger, this);
   cursor_handler_ = std::make_unique<flutter::CursorHandler>(
       internal_plugin_messenger, binding_handler_.get());
@@ -64,16 +66,43 @@ void FlutterWindowsView::SetEngine(
                     binding_handler_->GetDpiScale());
 }
 
-void FlutterWindowsView::RegisterKeyboardHookHandlers(
+void FlutterWindowsView::RegisterKeyboardHandlers(
     flutter::BinaryMessenger* messenger) {
-  AddKeyboardHookHandler(std::make_unique<flutter::KeyEventHandler>(messenger));
-  AddKeyboardHookHandler(
+  // There must be only one handler that receives |SendInput|, i.e. only one
+  // handler that might redispatch events. (See the documentation of
+  // |KeyboardKeyHandler| to learn about redispatching.)
+  //
+  // Whether an event is a redispatched event is decided by calculating the hash
+  // of the event. In order to allow the same real event in the future, the
+  // handler is "toggled" when events pass through, therefore the redispatching
+  // algorithm does not allow more than 1 handler that takes |SendInput|.
+#ifdef WINUWP
+  flutter::KeyboardKeyHandler::EventRedispatcher redispatch_event = nullptr;
+  flutter::KeyboardKeyEmbedderHandler::GetKeyStateHandler get_key_state =
+      nullptr;
+#else
+  flutter::KeyboardKeyHandler::EventRedispatcher redispatch_event = SendInput;
+  flutter::KeyboardKeyEmbedderHandler::GetKeyStateHandler get_key_state =
+      GetKeyState;
+#endif
+  auto key_handler =
+      std::make_unique<flutter::KeyboardKeyHandler>(redispatch_event);
+  key_handler->AddDelegate(
+      std::make_unique<KeyboardKeyChannelHandler>(messenger));
+  key_handler->AddDelegate(std::make_unique<KeyboardKeyEmbedderHandler>(
+      [this](const FlutterKeyEvent& event, FlutterKeyEventCallback callback,
+             void* user_data) {
+        return engine_->SendKeyEvent(event, callback, user_data);
+      },
+      get_key_state));
+  AddKeyboardHandler(std::move(key_handler));
+  AddKeyboardHandler(
       std::make_unique<flutter::TextInputPlugin>(messenger, this));
 }
 
-void FlutterWindowsView::AddKeyboardHookHandler(
-    std::unique_ptr<flutter::KeyboardHookHandler> handler) {
-  keyboard_hook_handlers_.push_back(std::move(handler));
+void FlutterWindowsView::AddKeyboardHandler(
+    std::unique_ptr<flutter::KeyboardHandlerBase> handler) {
+  keyboard_handlers_.push_back(std::move(handler));
 }
 
 uint32_t FlutterWindowsView::GetFrameBufferId(size_t width, size_t height) {
@@ -87,8 +116,8 @@ uint32_t FlutterWindowsView::GetFrameBufferId(size_t width, size_t height) {
   if (resize_target_width_ == width && resize_target_height_ == height) {
     // Platform thread is blocked for the entire duration until the
     // resize_status_ is set to kDone.
-    surface_manager_->ResizeSurface(GetRenderTarget(), width, height);
-    surface_manager_->MakeCurrent();
+    engine_->surface_manager()->ResizeSurface(GetRenderTarget(), width, height);
+    engine_->surface_manager()->MakeCurrent();
     resize_status_ = ResizeState::kFrameGenerated;
   }
 
@@ -109,8 +138,14 @@ void FlutterWindowsView::OnWindowSizeChanged(size_t width, size_t height) {
   // Called on the platform thread.
   std::unique_lock<std::mutex> lock(resize_mutex_);
 
+  if (!engine_->surface_manager()) {
+    SendWindowMetrics(width, height, binding_handler_->GetDpiScale());
+    return;
+  }
+
   EGLint surface_width, surface_height;
-  surface_manager_->GetSurfaceDimensions(&surface_width, &surface_height);
+  engine_->surface_manager()->GetSurfaceDimensions(&surface_width,
+                                                   &surface_height);
 
   bool surface_will_update =
       SurfaceWillUpdate(surface_width, surface_height, width, height);
@@ -170,12 +205,17 @@ bool FlutterWindowsView::OnKey(int key,
                                int scancode,
                                int action,
                                char32_t character,
-                               bool extended) {
-  return SendKey(key, scancode, action, character, extended);
+                               bool extended,
+                               bool was_down) {
+  return SendKey(key, scancode, action, character, extended, was_down);
 }
 
 void FlutterWindowsView::OnComposeBegin() {
   SendComposeBegin();
+}
+
+void FlutterWindowsView::OnComposeCommit() {
+  SendComposeCommit();
 }
 
 void FlutterWindowsView::OnComposeEnd() {
@@ -196,7 +236,7 @@ void FlutterWindowsView::OnScroll(double x,
 }
 
 void FlutterWindowsView::OnCursorRectUpdated(const Rect& rect) {
-  binding_handler_->UpdateCursorRect(rect);
+  binding_handler_->OnCursorRectUpdated(rect);
 }
 
 // Sends new size  information to FlutterEngine.
@@ -270,7 +310,7 @@ void FlutterWindowsView::SendPointerLeave() {
 }
 
 void FlutterWindowsView::SendText(const std::u16string& text) {
-  for (const auto& handler : keyboard_hook_handlers_) {
+  for (const auto& handler : keyboard_handlers_) {
     handler->TextHook(this, text);
   }
 }
@@ -279,10 +319,11 @@ bool FlutterWindowsView::SendKey(int key,
                                  int scancode,
                                  int action,
                                  char32_t character,
-                                 bool extended) {
-  for (const auto& handler : keyboard_hook_handlers_) {
-    if (handler->KeyboardHook(this, key, scancode, action, character,
-                              extended)) {
+                                 bool extended,
+                                 bool was_down) {
+  for (const auto& handler : keyboard_handlers_) {
+    if (handler->KeyboardHook(this, key, scancode, action, character, extended,
+                              was_down)) {
       // key event was handled, so don't send to other handlers.
       return true;
     }
@@ -291,20 +332,26 @@ bool FlutterWindowsView::SendKey(int key,
 }
 
 void FlutterWindowsView::SendComposeBegin() {
-  for (const auto& handler : keyboard_hook_handlers_) {
+  for (const auto& handler : keyboard_handlers_) {
     handler->ComposeBeginHook();
   }
 }
 
+void FlutterWindowsView::SendComposeCommit() {
+  for (const auto& handler : keyboard_handlers_) {
+    handler->ComposeCommitHook();
+  }
+}
+
 void FlutterWindowsView::SendComposeEnd() {
-  for (const auto& handler : keyboard_hook_handlers_) {
+  for (const auto& handler : keyboard_handlers_) {
     handler->ComposeEndHook();
   }
 }
 
 void FlutterWindowsView::SendComposeChange(const std::u16string& text,
                                            int cursor_pos) {
-  for (const auto& handler : keyboard_hook_handlers_) {
+  for (const auto& handler : keyboard_handlers_) {
     handler->ComposeChangeHook(text, cursor_pos);
   }
 }
@@ -366,15 +413,15 @@ void FlutterWindowsView::SendPointerEventWithData(
 }
 
 bool FlutterWindowsView::MakeCurrent() {
-  return surface_manager_->MakeCurrent();
+  return engine_->surface_manager()->MakeCurrent();
 }
 
 bool FlutterWindowsView::MakeResourceCurrent() {
-  return surface_manager_->MakeResourceCurrent();
+  return engine_->surface_manager()->MakeResourceCurrent();
 }
 
 bool FlutterWindowsView::ClearContext() {
-  return surface_manager_->ClearContext();
+  return engine_->surface_manager()->ClearContext();
 }
 
 bool FlutterWindowsView::SwapBuffers() {
@@ -388,7 +435,7 @@ bool FlutterWindowsView::SwapBuffers() {
     case ResizeState::kResizeStarted:
       return false;
     case ResizeState::kFrameGenerated: {
-      bool swap_buffers_result = surface_manager_->SwapBuffers();
+      bool swap_buffers_result = engine_->surface_manager()->SwapBuffers();
       resize_status_ = ResizeState::kDone;
       lock.unlock();
       resize_cv_.notify_all();
@@ -397,19 +444,28 @@ bool FlutterWindowsView::SwapBuffers() {
     }
     case ResizeState::kDone:
     default:
-      return surface_manager_->SwapBuffers();
+      return engine_->surface_manager()->SwapBuffers();
   }
 }
 
+bool FlutterWindowsView::PresentSoftwareBitmap(const void* allocation,
+                                               size_t row_bytes,
+                                               size_t height) {
+  return binding_handler_->OnBitmapSurfaceUpdated(allocation, row_bytes,
+                                                  height);
+}
+
 void FlutterWindowsView::CreateRenderSurface() {
-  PhysicalWindowBounds bounds = binding_handler_->GetPhysicalWindowBounds();
-  surface_manager_->CreateSurface(GetRenderTarget(), bounds.width,
-                                  bounds.height);
+  if (engine_ && engine_->surface_manager()) {
+    PhysicalWindowBounds bounds = binding_handler_->GetPhysicalWindowBounds();
+    engine_->surface_manager()->CreateSurface(GetRenderTarget(), bounds.width,
+                                              bounds.height);
+  }
 }
 
 void FlutterWindowsView::DestroyRenderSurface() {
-  if (surface_manager_) {
-    surface_manager_->DestroySurface();
+  if (engine_ && engine_->surface_manager()) {
+    engine_->surface_manager()->DestroySurface();
   }
 }
 

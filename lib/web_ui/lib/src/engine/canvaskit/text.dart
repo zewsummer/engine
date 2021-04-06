@@ -433,7 +433,7 @@ class CkParagraph extends ManagedSkiaObject<SkParagraph>
   /// is deleted.
   final List<_ParagraphCommand> _paragraphCommands;
 
-  /// The constraints from the last time we layed the paragraph out.
+  /// The constraints from the last time we laid the paragraph out.
   ///
   /// This is used to resurrect the paragraph if the initial paragraph
   /// is deleted.
@@ -572,7 +572,7 @@ class CkParagraph extends ManagedSkiaObject<SkParagraph>
     try {
       skiaObject.layout(constraints.width);
     } catch (e) {
-      html.window.console.warn('CanvasKit threw an exception while laying '
+      printWarning('CanvasKit threw an exception while laying '
           'out the paragraph. The font was "${_paragraphStyle._fontFamily}". '
           'Exception:\n$e');
       rethrow;
@@ -581,15 +581,60 @@ class CkParagraph extends ManagedSkiaObject<SkParagraph>
 
   @override
   ui.TextRange getLineBoundary(ui.TextPosition position) {
-    // TODO(hterkelsen): Implement this when it's added to CanvasKit
-    throw UnimplementedError('getLineBoundary');
+    final List<SkLineMetrics> metrics = skiaObject.getLineMetrics();
+    final int offset = position.offset;
+    for (final SkLineMetrics metric in metrics) {
+      if (offset >= metric.startIndex && offset <= metric.endIndex) {
+        return ui.TextRange(start: metric.startIndex, end: metric.endIndex);
+      }
+    }
+    return ui.TextRange(start: -1, end: -1);
   }
 
   @override
   List<ui.LineMetrics> computeLineMetrics() {
-    // TODO(hterkelsen): Implement this when it's added to CanvasKit
-    throw UnimplementedError('computeLineMetrics');
+    final List<SkLineMetrics> skLineMetrics = skiaObject.getLineMetrics();
+    final List<ui.LineMetrics> result = <ui.LineMetrics>[];
+    for (final SkLineMetrics metric in skLineMetrics) {
+      result.add(CkLineMetrics._(metric));
+    }
+    return result;
   }
+}
+
+class CkLineMetrics implements ui.LineMetrics {
+  CkLineMetrics._(this.skLineMetrics);
+
+  final SkLineMetrics skLineMetrics;
+
+  @override
+  double get ascent => skLineMetrics.ascent;
+
+  @override
+  double get descent => skLineMetrics.descent;
+
+  // TODO(hterkelsen): Implement this correctly once SkParagraph does.
+  @override
+  double get unscaledAscent => skLineMetrics.ascent;
+
+  @override
+  bool get hardBreak => skLineMetrics.isHardBreak;
+
+  @override
+  double get baseline => skLineMetrics.baseline;
+
+  @override
+  double get height =>
+      (skLineMetrics.ascent + skLineMetrics.descent).round().toDouble();
+
+  @override
+  double get left => skLineMetrics.left;
+
+  @override
+  double get width => skLineMetrics.width;
+
+  @override
+  int get lineNumber => skLineMetrics.lineNumber;
 }
 
 class CkParagraphBuilder implements ui.ParagraphBuilder {
@@ -775,7 +820,7 @@ class CkParagraphBuilder implements ui.ParagraphBuilder {
       List<SkTypeface>? typefacesForFamily =
           skiaFontCollection.familyToTypefaceMap[font];
       if (typefacesForFamily == null) {
-        html.window.console.warn('A fallback font was registered but we '
+        printWarning('A fallback font was registered but we '
             'cannot retrieve the typeface for it.');
         continue;
       }
@@ -864,7 +909,7 @@ class CkParagraphBuilder implements ui.ParagraphBuilder {
     if (_styleStack.length <= 1) {
       // The top-level text style is paragraph-level. We don't pop it off.
       if (assertionsEnabled) {
-        html.window.console.warn(
+        printWarning(
           'Cannot pop text style in ParagraphBuilder. '
           'Already popped all text styles from the style stack.',
         );
